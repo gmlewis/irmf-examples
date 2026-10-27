@@ -78,3 +78,18 @@ test('rejects dynamic import', () => {
   const r = evaluateTSL('const m = import("fs"); const mainModel4 = () => [float(1)];', TSL);
   assert.match(r.diagnostics[0].message, /dynamic `import\(\)`/);
 });
+
+test('rejects #include in TSL bodies', () => {
+  const r = evaluateTSL(
+    '#include "github.com/attacker/repo/blob/main/payload.glsl"\nconst mainModel4 = () => [float(1)];\n',
+    TSL,
+  );
+  assert.match(r.diagnostics[0].message, /#include/);
+});
+
+test('shadows globalThis and other host handles', () => {
+  const r = evaluateTSL('const mainModel4 = () => [float(globalThis.fetch("https://example.com"))];', TSL);
+  assert.throws(() => r.entries.mainModel4(TSL.vec3(0)), /undefined/);
+  assert.match(buildPrelude(TSL), /globalThis = undefined/);
+  assert.match(buildPrelude(TSL), /process = undefined/);
+});

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { gunzipSync } from 'node:zlib';
 
 import { compileTSL, THREE_VERSION } from './compile.mjs';
@@ -110,12 +111,25 @@ function runCompile(job, opts) {
   }
 
   const args = [fileURLToPath(import.meta.url), '--worker'];
+  // Bound the child's heap even when the permission model is disabled.
+  args.unshift('--max-old-space-size=512');
   if (opts.sandbox) {
     args.unshift('--permission', `--allow-fs-read=${PKG_ROOT}`);
   }
 
+  // Do not leak the caller's environment (tokens, credentials) into the
+  // process that evaluates untrusted JavaScript.
+  const childEnv = {
+    PATH: process.env.PATH || '',
+    TMPDIR: process.env.TMPDIR || tmpdir(),
+    TMP: process.env.TMP || tmpdir(),
+    NO_COLOR: '1',
+  };
+
   const child = spawnSync(process.execPath, args, {
     input: JSON.stringify(job),
+    env: childEnv,
+    cwd: tmpdir(),
     encoding: 'utf8',
     timeout: opts.timeoutMs,
     maxBuffer: 128 * 1024 * 1024,

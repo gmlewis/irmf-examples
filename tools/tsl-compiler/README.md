@@ -78,18 +78,28 @@ and exit code 1. `line` is 1-based relative to the TSL body (after `}*/`).
 
 TSL bodies are arbitrary JavaScript. The compiler:
 
-- shadows `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`,
-  `importScripts`, `require`, and `process` inside the evaluated body;
-- rejects `export` and dynamic `import()`;
-- runs the evaluation in a child process with a timeout, and, by default,
-  Node's permission model (`--permission --allow-fs-read=<compiler dir>`), so
-  the body cannot read or write files outside the compiler tree;
+- shadows host handles inside the evaluated body: `fetch`, `XMLHttpRequest`,
+  `WebSocket`, `EventSource`, `importScripts`, `require`, `process`,
+  `globalThis`, `window`, `self`, `document`, `location`, `Worker`,
+  `Function`, `Date`, `crypto`, `localStorage`, and friends;
+- rejects `export`, dynamic `import()`, and `#include` (which would be remote
+  code execution in a JavaScript body);
+- runs the evaluation in a child process with a timeout and a bounded heap
+  (`--max-old-space-size=512`);
+- by default, also applies Node's permission model
+  (`--permission --allow-fs-read=<compiler dir>`). On current Node releases
+  this denies network access and writes by default; verify the behavior on
+  the Node version you ship;
+- clears the environment and runs in the system temp directory, so the child
+  cannot read the caller's tokens or credentials from `process.env`;
 - performs no network access of its own.
 
-These are **guardrails, not a hardened sandbox**. Node's permission model does
-not block network access, and a determined body can still reach `globalThis`.
-Treat untrusted TSL as untrusted code. `encoding: "gpg"` protects
-confidentiality only and is not an execution boundary.
+These are **guardrails, not a hardened sandbox**. Prototype-based escapes
+(for example `({}).constructor.constructor`) remain possible, and the
+permission model is not a security boundary. For genuinely hostile models,
+run the compiler in an OS sandbox or container with no network, no secrets,
+and a read-only filesystem. `encoding: "gpg"` protects confidentiality only
+and is not an execution boundary.
 
 ## TSL authoring notes
 
@@ -104,7 +114,7 @@ See `../../docs/tsl-spike-results.md` and the IRMF spec. Key rules:
 ## Tests
 
 ```sh
-npm test        # 30 unit/CLI tests
+npm test        # 32 unit/CLI tests
 npm run lint    # syntax check
 ```
 
