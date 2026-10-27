@@ -1,0 +1,6 @@
+const mainModel4 = (xyz) => {
+  while (true) {
+    // never terminates
+  }
+  return [float(1)];
+};

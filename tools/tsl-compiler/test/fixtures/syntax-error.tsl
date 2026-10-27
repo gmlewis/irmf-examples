@@ -1,0 +1,3 @@
+const a = float(1);
+const b = ;
+const mainModel4 = () => [a, b];

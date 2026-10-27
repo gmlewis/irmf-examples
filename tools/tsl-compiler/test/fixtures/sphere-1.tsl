@@ -1,0 +1,6 @@
+// 1-material sphere (mirrors examples/001-sphere/sphere-1).
+const mainModel4 = (xyz) => {
+  const radius = float(5.0);
+  const r = length(xyz);
+  return [select(r.lessThanEqual(radius), float(1.0), float(0.0))];
+};

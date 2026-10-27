@@ -2,3 +2,4 @@
 *.stl
 *.svx
 *.zip
+node_modules/

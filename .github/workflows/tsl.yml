@@ -1,0 +1,46 @@
+name: TSL
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  tsl-compiler:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/tsl-compiler
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: tools/tsl-compiler/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      # Tests must not require network after `npm ci`.
+      - run: npm test
+
+  conformance:
+    runs-on: ubuntu-latest
+    needs: tsl-compiler
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+      - run: go test ./... && go vet ./...
+      - name: Install compiler dependencies
+        working-directory: tools/tsl-compiler
+        run: npm ci
+      - name: Compile every TSL example
+        run: node tools/conformance/src/compile-all.mjs
+      - name: Check the three-language matrix
+        # The corpus is still being filled in; report but do not fail yet.
+        run: node tools/conformance/src/matrix.mjs --allow-missing

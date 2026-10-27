@@ -6,6 +6,36 @@ For background on IRMF, please see: [irmf.io](https://irmf.io).
 
 This repo is dedicated to examples showcasing IRMF examples.
 
+## Languages
+
+IRMF examples can be written in GLSL ES, WGSL, or TSL. A logical example has
+up to three files:
+
+| File | `language` | Notes |
+|---|---|---|
+| `<base>.irmf` | `glsl` | GLSL ES source text |
+| `<base>-wgsl.irmf` | `wgsl` | WGSL source text |
+| `<base>-tsl.irmf` | `tsl` | JavaScript building a three.js TSL node graph |
+
+TSL files also carry `"tslVersion": "0.180.0"` (the pinned three.js release).
+
+### TSL compiler
+
+The CLI slicers compile TSL bodies with
+[`tools/tsl-compiler`](tools/tsl-compiler):
+
+```sh
+cd tools/tsl-compiler && npm ci
+node src/cli.mjs --json --materials 1 ../examples/001-sphere/sphere-1-tsl.irmf
+```
+
+### Conformance
+
+```sh
+node tools/conformance/src/matrix.mjs        # three-language coverage
+node tools/conformance/src/compile-all.mjs   # compile every TSL example
+```
+
 ## Examples
 
 * [001-sphere](examples/001-sphere)

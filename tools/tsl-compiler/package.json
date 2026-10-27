@@ -1,0 +1,21 @@
+{
+  "name": "irmf-tsl-compiler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Compile an IRMF TSL body (JavaScript building a three.js TSL node graph) into a standalone WGSL function for the IRMF CLI slicers.",
+  "license": "Apache-2.0",
+  "bin": {
+    "irmf-tsl-compile": "./src/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "lint": "node --check src/eval.mjs && node --check src/compile.mjs && node --check src/cli.mjs"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

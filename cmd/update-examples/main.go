@@ -1,10 +1,14 @@
-// update-examples parses the README.md files in the examples directory
-// and updates the code snippets with minimal versions of the shaders
-// since there is not a good way to embed files into README.md files
-// on GitHub.
+// update-examples parses the README.md files in the examples directory and
+// updates the code snippets with minimal versions of the shaders, because
+// there is no good way to embed files into README.md files on GitHub.
+//
+// For each `## <base>.irmf` section it emits every available language variant
+// (GLSL, WGSL, TSL) and a one-click link to open that variant in the IRMF
+// editor.
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -15,52 +19,58 @@ import (
 )
 
 var (
-	h2RE = regexp.MustCompile(`\n##\s+`)
+	h2RE          = regexp.MustCompile(`\n##\s+`)
+	irmfTokenRE   = regexp.MustCompile(`([A-Za-z0-9_+.\-]+\.irmf)`)
+	languageRE    = regexp.MustCompile(`(?m)^\s*"?language"?\s*:\s*"([^"]+)"`)
+	checkOnly     = flag.Bool("check", false, "exit non-zero if a README would change")
+	driftDetected = false
 )
 
+var (
+	languageOrder = []string{"glsl", "wgsl", "tsl"}
+	languageLabel = map[string]string{"glsl": "GLSL", "wgsl": "WGSL", "tsl": "TSL"}
+)
+
+type irmfFile struct {
+	text string
+	lang string
+}
+
 func main() {
+	flag.Parse()
+
 	readmeByPath := map[string]string{}
-	irmfByPath := map[string]map[string]string{}
-	stlFileSizesByPath := map[string]map[string]int64{}
+	irmfByPath := map[string]map[string]irmfFile{}
 	dlpFileSizesByPath := map[string]map[string]int64{}
 	if err := filepath.Walk("examples", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Fatalf("path=%q, err=%v", path, err)
 		}
 		if info.IsDir() {
-			irmfByPath[path] = map[string]string{}
-			stlFileSizesByPath[path] = map[string]int64{}
+			irmfByPath[path] = map[string]irmfFile{}
 			dlpFileSizesByPath[path] = map[string]int64{}
 			return nil
 		}
-		if info.Name() == "README.md" {
+		dir := filepath.Dir(path)
+		base := filepath.Base(path)
+		switch {
+		case base == "README.md":
 			buf, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("ReadFile(%q): %v", path, err)
 			}
-			readmeByPath[filepath.Dir(path)] = string(buf)
-			return nil
-		}
-		if strings.HasSuffix(path, ".stl") {
-			dir := filepath.Dir(path)
-			base := filepath.Base(path)
-			stlFileSizesByPath[dir][base] = info.Size()
-			return nil
-		}
-		if strings.HasSuffix(path, ".cbddlp") {
-			dir := filepath.Dir(path)
-			base := filepath.Base(path)
+			readmeByPath[dir] = string(buf)
+		case strings.HasSuffix(base, ".cbddlp"):
 			dlpFileSizesByPath[dir][base] = info.Size()
-			return nil
-		}
-		if strings.HasSuffix(path, ".irmf") {
+		case strings.HasSuffix(base, ".irmf"):
 			buf, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("ReadFile(%q): %v", path, err)
 			}
-			dir := filepath.Dir(path)
-			base := filepath.Base(path)
-			irmfByPath[dir][base] = removeExtraFields(string(buf))
+			irmfByPath[dir][base] = irmfFile{
+				text: removeExtraFields(string(buf)),
+				lang: fileLanguage(base, string(buf)),
+			}
 		}
 		return nil
 	}); err != nil {
@@ -68,8 +78,40 @@ func main() {
 	}
 
 	for k, v := range readmeByPath {
-		processReadme(k, v, irmfByPath[k], stlFileSizesByPath[k], dlpFileSizesByPath[k])
+		processReadme(k, v, irmfByPath[k], dlpFileSizesByPath[k])
 	}
+
+	if *checkOnly && driftDetected {
+		log.Fatal("one or more README.md files are out of date; run this program without -check")
+	}
+}
+
+func fileLanguage(name, raw string) string {
+	switch {
+	case strings.HasSuffix(name, "-wgsl.irmf"):
+		return "wgsl"
+	case strings.HasSuffix(name, "-tsl.irmf"):
+		return "tsl"
+	case strings.HasSuffix(name, "-glsl.irmf"):
+		return "glsl"
+	}
+	if m := languageRE.FindStringSubmatch(raw); len(m) > 1 {
+		lang := strings.ToLower(strings.TrimSpace(m[1]))
+		if _, ok := languageLabel[lang]; ok {
+			return lang
+		}
+	}
+	return "glsl"
+}
+
+func baseName(name string) string {
+	n := strings.TrimSuffix(name, ".irmf")
+	for _, suffix := range []string{"-glsl", "-wgsl", "-tsl"} {
+		if strings.HasSuffix(n, suffix) {
+			return strings.TrimSuffix(n, suffix)
+		}
+	}
+	return n
 }
 
 func removeExtraFields(s string) string {
@@ -90,11 +132,16 @@ func removeExtraFields(s string) string {
 			out = append(out, line)
 			continue
 		}
+		matched := false
 		for _, key := range fieldsToKeep {
-			tag := `"` + key + `": `
-			index := strings.Index(line, tag)
-			if index >= 0 {
-				out = append(out, "  "+key+": "+line[len(tag)+index:])
+			for _, tag := range []string{`"` + key + `": `, key + `: `} {
+				if index := strings.Index(line, tag); index >= 0 {
+					out = append(out, "  "+key+": "+line[index+len(tag):])
+					matched = true
+					break
+				}
+			}
+			if matched {
 				break
 			}
 		}
@@ -102,45 +149,137 @@ func removeExtraFields(s string) string {
 	return strings.Join(out, "\n")
 }
 
-func processReadme(path, buf string, irmfs map[string]string, stlFileSizes map[string]int64, dlpFileSizes map[string]int64) {
+// variantsFor maps each language to the file name that provides it.
+func variantsFor(base string, files map[string]irmfFile) map[string]string {
+	out := map[string]string{}
+	for _, lang := range languageOrder {
+		for _, candidate := range []string{base + "-" + lang + ".irmf", base + ".irmf"} {
+			if f, ok := files[candidate]; ok && f.lang == lang {
+				out[lang] = candidate
+				break
+			}
+		}
+	}
+	// Fall back to any name for the same base and language.
+	for name, f := range files {
+		if strings.Contains(name, "-gzip") || strings.Contains(name, "-base64") {
+			continue
+		}
+		if baseName(name) != base {
+			continue
+		}
+		if _, ok := out[f.lang]; !ok {
+			out[f.lang] = name
+		}
+	}
+	return out
+}
+
+func processReadme(path, buf string, irmfs map[string]irmfFile, dlpFileSizes map[string]int64) {
 	log.Printf("Processing %v/README.md ...", path)
 	log.Printf("Found %v .irmf files...", len(irmfs))
-	log.Printf("Found %v .stl files...", len(stlFileSizes))
-	log.Printf("Found %v .cbddlp files...", len(dlpFileSizes))
 
 	licenseText := newLicenseText
 
 	parts := h2RE.Split(buf, -1)
-	log.Printf("Found %v ## sections...", len(parts))
 	for i, v := range parts {
 		if i == 0 {
 			continue
 		}
-		index := strings.Index(v, ".irmf")
-		filename := v[:index+5]
-		glsl, ok := irmfs[filename]
-		if !ok {
-			log.Fatalf("Could not find file %v, path=%q", filename, path)
+		m := irmfTokenRE.FindStringSubmatch(v)
+		if m == nil {
+			parts[i] = "## " + v
+			continue
 		}
-		glslIndex := strings.Index(v, "```glsl")
-		if glslIndex < 0 {
-			log.Fatalf("Unable to find ```glsl...``` in %v", v)
+		name := m[1]
+		base := baseName(name)
+		if strings.Contains(name, "-gzip") || strings.Contains(name, "-base64") {
+			parts[i] = "## " + v
+			continue
 		}
-
 		if j := strings.Index(v, "-----"); j >= 0 {
-			licenseText = v[j:] // Preserve year of original license text.
+			licenseText = v[j:] // Preserve the year of the original license text.
+			v = v[:j]
 		}
 
-		parts[i] = "## " + v[0:glslIndex+8] + glsl + "```\n\n" + tryMessage(path, filename) + addSlicerMessage()
+		variants := variantsFor(base, irmfs)
+		if len(variants) == 0 {
+			log.Printf("Warning: no .irmf variants found for %v", name)
+			parts[i] = "## " + v
+			continue
+		}
 
+		// Strip the old messages if the section has no code fence.
+		if j := strings.Index(v, "* Try loading"); j >= 0 {
+			v = v[:j]
+		}
+		if j := strings.Index(v, "* Use [irmf-slicer]"); j >= 0 {
+			v = v[:j]
+		}
+		// Preserve the prose and image; replace the old code block onward.
+		head := v
+		if j := strings.Index(v, "```"); j >= 0 {
+			head = v[:j]
+		}
+		// Remove any language labels left by a previous run.
+		head = strings.TrimRight(head, "\n")
+		for {
+			lines := strings.Split(head, "\n")
+			if len(lines) == 0 {
+				break
+			}
+			last := strings.TrimSpace(lines[len(lines)-1])
+			if last == "" || last == "**GLSL**" || last == "**WGSL**" || last == "**TSL**" {
+				head = strings.Join(lines[:len(lines)-1], "\n")
+				continue
+			}
+			break
+		}
+		head += "\n"
+
+		var b strings.Builder
+		b.WriteString("## " + head)
+		for _, lang := range languageOrder {
+			filename, ok := variants[lang]
+			if !ok {
+				continue
+			}
+			text := strings.TrimRight(irmfs[filename].text, "\n") + "\n"
+			if len(text) > 65536 {
+				// Generated/encoded bodies can be very large; link instead.
+				fmt.Fprintf(&b, "\n**%s**\n\nThe full source is large (%d bytes); see [%s](%s).\n",
+					languageLabel[lang], len(text), filename, filename)
+			} else {
+				fmt.Fprintf(&b, "\n**%s**\n\n```%s\n%s```\n", languageLabel[lang], lang, text)
+			}
+		}
+		b.WriteString("\n")
+		for _, lang := range languageOrder {
+			filename, ok := variants[lang]
+			if !ok {
+				continue
+			}
+			b.WriteString(tryMessage(path, filename, lang))
+		}
+		b.WriteString(addSlicerMessage())
 		if len(dlpFileSizes) > 0 {
-			parts[i] += addDLPs(filename, dlpFileSizes)
+			b.WriteString(addDLPs(base+".irmf", dlpFileSizes))
 		}
+		parts[i] = b.String()
 	}
 	parts = append(parts, licenseText)
 
 	outbuf := []byte(strings.Join(parts, "\n"))
-	if err := os.WriteFile(path+"/README.md", outbuf, 0644); err != nil {
+	target := path + "/README.md"
+	if *checkOnly {
+		existing, err := os.ReadFile(target)
+		if err != nil || string(existing) != string(outbuf) {
+			log.Printf("Out of date: %v", target)
+			driftDetected = true
+		}
+		return
+	}
+	if err := os.WriteFile(target, outbuf, 0644); err != nil {
 		log.Fatalf("WriteFile: %v", err)
 	}
 }
@@ -151,38 +290,36 @@ func addSlicerMessage() string {
 
 func addDLPs(filename string, dlpFileSizes map[string]int64) string {
 	var lines []string
-
-	// Strip off the ".irmf"
 	filename = strings.TrimSuffix(filename, ".irmf")
-
 	for k, v := range dlpFileSizes {
 		if strings.HasPrefix(k, filename+"-mat") {
 			lines = append(lines, fmt.Sprintf("  - [%v](%v) (%v bytes)", k, k, v))
 		}
 	}
-
 	if len(lines) == 0 {
 		return ""
 	}
-
 	header := "* Here is a voxel approximation of this model\n  using [irmf-slicer](https://github.com/gmlewis/irmf-slicer)"
 	if len(lines) > 1 {
 		sort.Strings(lines)
 		header += "\n  (one .cbddlp file per material)"
 	}
-
 	return "\n" + header + ":\n" + strings.Join(lines, "\n") + "\n"
 }
 
-func tryMessage(path, filename string) string {
-	return fmt.Sprintf(`* Try loading [%v](https://gmlewis.github.io/irmf-editor/?s=github.com/gmlewis/irmf-examples/blob/master/%v/%v) now in the experimental IRMF editor!`+"\n", filename, path, filename)
+func tryMessage(dir, filename, lang string) string {
+	return fmt.Sprintf(
+		"* Try loading [%v (%v)](https://gmlewis.github.io/irmf-editor/?s=github.com/gmlewis/irmf-examples/blob/master/%v/%v) now in the IRMF editor!\n",
+		filename, languageLabel[lang], dir, filename)
 }
 
 var fieldsToKeep = []string{
 	"irmf",
+	"language",
 	"materials",
 	"max",
 	"min",
+	"tslVersion",
 	"units",
 }
 

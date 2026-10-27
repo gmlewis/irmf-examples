@@ -1,0 +1,11 @@
+{
+  "name": "irmf-conformance",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-language coverage and parity checks for the IRMF example corpus.",
+  "scripts": {
+    "matrix": "node src/matrix.mjs",
+    "compile-all": "node src/compile-all.mjs"
+  }
+}

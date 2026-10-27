@@ -1,0 +1,8 @@
+// 3 nested cubes -> 3 materials, values 0..1 in material order.
+const box = (size, p) => {
+  const q = p.abs().sub(float(size));
+  const d = q.max(float(0)).length().add(min(max(q.x, max(q.y, q.z)), float(0)));
+  return select(d.lessThanEqual(float(0)), float(1.0), float(0.0));
+};
+
+const mainModel4 = (xyz) => [box(2.0, xyz), box(1.5, xyz), box(1.0, xyz)];
