@@ -36,6 +36,19 @@ node tools/conformance/src/matrix.mjs        # three-language coverage
 node tools/conformance/src/compile-all.mjs   # compile every TSL example
 ```
 
+### Pinning includes
+
+GitHub `#include` URLs must name a commit, not a branch or tag, so a reviewed
+model keeps executing the same code. To rewrite mutable includes:
+
+```sh
+node tools/pin-includes/src/cli.mjs --write examples/012-bifilar-electromagnet/*.irmf
+node tools/pin-includes/src/cli.mjs --check examples/**/*.irmf   # CI guard
+```
+
+Set `GITHUB_TOKEN` to avoid the unauthenticated GitHub API rate limit. See
+[`tools/pin-includes`](tools/pin-includes) for details.
+
 ## Examples
 
 * [001-sphere](examples/001-sphere)

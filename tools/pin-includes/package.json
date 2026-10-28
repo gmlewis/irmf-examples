@@ -1,0 +1,13 @@
+{
+  "name": "irmf-pin-includes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Rewrite mutable GitHub #include URLs in IRMF files to commit-pinned URLs.",
+  "bin": {
+    "irmf-pin-includes": "./src/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
